@@ -54,21 +54,45 @@ jobs:
           code=$?
           if [ $code -ne 0 ]; then
             echo "===== BUILD FAILED (exit $code) ====="
-            tail -n 120 build.log
 
-            # ① 写入 job summary：Actions 页面可直接看到，便于复制
+            # ① 打印 Kotlin 编译错误（e: 文件:行号:列 消息）——最关键的信息
+            echo "----- Kotlin compile errors (^e:) -----"
+            grep "^e: " build.log | head -60 || true
+
+            # ② 把每条编译错误发成 ::error 注解。
+            #    注解可通过公开 API 读取（check-runs/<id>/annotations），
+            #    这样无需下载日志即可远程定位错误。
+            grep "^e: " build.log | head -20 | while IFS= read -r line; do
+              clean=$(printf '%s' "$line" | tr -d '\r' | sed 's/%/%25/g')
+              printf '::error title=Kotlin::%s\n' "$clean"
+            done
+
+            # ③ Gradle 失败摘要
+            echo "----- FAILURE block -----"
+            grep -A 14 "^FAILURE:\|^\* What went wrong" build.log | head -60 || true
+
+            # ④ 日志尾部
+            echo "----- tail -----"
+            tail -n 60 build.log
+
+            # ⑤ 写入 job summary
             {
               echo "## ❌ Build failed (exit $code)"
               echo ""
+              echo "### Kotlin compile errors"
               echo '```text'
-              tail -n 150 build.log
+              grep "^e: " build.log | head -60 || echo "(no ^e: lines)"
+              echo '```'
+              echo "### Failure block"
+              echo '```text'
+              grep -A 14 "^FAILURE:\|^\* What went wrong" build.log | head -60 || true
+              echo '```'
+              echo "### Tail"
+              echo '```text'
+              tail -n 60 build.log
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
 
-            # ② 逐行发注解：注解可通过公开 API 读取，便于远程诊断
-            tail -n 25 build.log | while IFS= read -r line; do
-              printf '::error title=Gradle::%s\n' "$(printf '%s' "$line" | tr -d '\r')"
-            done
             exit $code
           fi
           echo "BUILD OK"

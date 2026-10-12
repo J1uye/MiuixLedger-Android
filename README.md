@@ -4,12 +4,12 @@
 
 | 库 | 作用 | 版本 |
 | --- | --- | --- |
-| [Miuix](https://github.com/compose-miuix-ui/miuix)（HyperOS 风格组件库） | 界面组件：`Scaffold`、`TopAppBar`、`Text`、`SmallTitle`、`Slider`、`Switch`、`TextField`、`Button`、`OverlayDialog`、`MiuixTheme` 主题 | 0.9.4 |
+| [Miuix](https://github.com/compose-miuix-ui/miuix)（HyperOS 风格组件库） | 界面组件：`Scaffold`、`TopAppBar`、`Text`、`SmallTitle`、`Slider`、`Switch`、`TextField`、`Button`、`TextButton`、`OverlayDialog`、`MiuixTheme` 主题 | 0.9.4 |
 | [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)（Backdrop） | 液态玻璃材质：底栏、FAB、卡片、放大镜的折射/磨砂/色散 | 2.0.1 |
 
 ## 工具链（对齐两个库的官方工程）
 
-两个库都要求 **JetBrains Compose 1.12.x**，而 Compose 1.12 按 **API 37** 编译。
+两个库都要求 **JetBrains Compose 1.12.0**，而 Compose 1.12 按 **API 37** 编译。
 从 API 37 起 Google 改用 minor version 命名（只有 `android-37.0`，没有 `android-37`），
 **因此必须用 AGP 9.x**：
 
@@ -17,15 +17,24 @@
 | --- | --- | --- |
 | AGP | 9.4.1 | Miuix 官方工程 |
 | Gradle | 9.8.1 | Miuix 官方工程 |
-| Kotlin | 2.4.21 | Miuix 0.9.4 用 2.4.20、backdrop 2.0.1 用 2.4.10，取 ≥ 两者 |
-| compileSdk | 37（`release(37){ minorApiLevel = 0 }`） | Compose 1.12 要求 |
+| compileSdk / targetSdk | 37 | 两个库官方工程 |
+| buildToolsVersion | 37.0.0 | LiquidGlass 官方 androidApp |
+| Kotlin | AGP 9 内置 | **不可再应用 `org.jetbrains.kotlin.android`** |
+
+⚠️ **AGP 9 起内置 Kotlin**：若在 `app/build.gradle.kts` 里再应用
+`org.jetbrains.kotlin.android`，会直接报
+`The 'org.jetbrains.kotlin.android' plugin is no longer required for Kotlin support since AGP 9.0.`
+并中断构建。本项目只应用 `com.android.application` + `org.jetbrains.kotlin.plugin.compose`。
 
 ## 云端打包（无需本地环境）
 
-1. GitHub 新建仓库（Public）
-2. 把本文件夹**里面的全部内容**上传到仓库根目录（含隐藏的 `.github`）
-3. 等 5-8 分钟 → **Actions** 页签 → 点最新运行 → 底部 **Artifacts** 下载
+1. 把本文件夹**里面的全部内容**上传到 GitHub 仓库根目录（含隐藏的 `.github`）
+2. 等 5-8 分钟 → **Actions** 页签 → 点最新运行
+3. 底部 **Artifacts** → 下载 `MiuixLedger-debug-apk`
 4. 解压得到 `app-debug.apk` → 传手机安装（允许"未知来源"）
+
+> 构建失败时，工作流会自动把 Kotlin 编译错误（`e: 文件:行号`）写进
+> **job summary** 页面，方便直接复制排查。
 
 ## 玻璃管线（Backdrop API）
 
@@ -36,15 +45,27 @@
     effects = {
         vibrancy()                              // 提饱和
         blur(blurDp.toPx())                     // 磨砂
-        lens(heightDp.toPx(), amountDp.toPx())  // 边缘折射
+        lens(                                   // 边缘折射
+            refractionHeight = hDp.toPx(),
+            refractionAmount = aDp.toPx(),
+            chromaticAberration = true,         // 色散
+        )
     },
     highlight = { Highlight.Default },
     shadow = { Shadow(alpha = 0.14f) },
+    onDrawSurface = { drawRect(tint) },
 )
 ```
 
-⚠️ **关键**：`blur()` / `lens()` 的参数单位是**像素**，必须 `dp.toPx()` 换算，
-否则高密度屏上效果小到看不见。
+⚠️ **两个关键坑**：
+
+1. `blur()` / `lens()` 的参数单位是**像素**，必须 `dp.toPx()` 换算，
+   否则高密度屏上效果小到看不见。
+2. `MiuixTheme.colorScheme` / `MiuixTheme.textStyles` 是 **`@Composable` 属性**。
+   `effects{}`、`onDrawSurface{}`、`onDrawBehind{}`、`highlight{}`、`shadow{}`
+   这些回调**不是 `@Composable`**，在里面直接读会报
+   `@Composable invocations can only happen from the context of a @Composable function`。
+   必须先在组合期取出颜色变量，再在回调里使用。
 
 ## 滑动动态效果（官方 LiquidBottomTabs 移植）
 
@@ -62,6 +83,6 @@
 
 ## 已知说明
 
-- 本工程由 AI 生成，未本地编译验证（生成环境无 Android SDK）。
-  若云端构建报错，把 Actions 的报错文字发回即可修复。
+- 本工程由 AI 生成，**未在本地编译验证**（生成环境无 Android SDK / 命令行被沙箱阻断）。
+  所有 API 签名均已逐一比对官方库源码与文档站核对，但最终以云端构建结果为准。
 - minSdk 33：完整折射需要 **Android 13+**（AGSL RuntimeShader）。

@@ -317,6 +317,14 @@ fun LiquidFab(
     val lensHPx = with(density) { (settings.refractionHeight * 0.8f).dp.toPx() }
     val lensAPx = with(density) { (settings.refractionAmount * 1.2f).dp.toPx() }
 
+    // ⚠️ 必须在组合期把颜色取出来。
+    //    MiuixTheme.colorScheme 是 @Composable 属性（内部读 LocalColorScheme），
+    //    而 onDrawSurface 是绘制回调（DrawScope.() -> Unit，不是 @Composable），
+    //    在里面直接读会报：
+    //      "@Composable invocations can only happen from the context of
+    //       a @Composable function"
+    val surfaceColor = MiuixTheme.colorScheme.primary.copy(alpha = 0.62f)
+
     Box(
         modifier = modifier
             .size(60.dp)
@@ -331,7 +339,7 @@ fun LiquidFab(
                 },
                 highlight = { Highlight.Default },
                 shadow = { Shadow(alpha = 0.24f) },
-                onDrawSurface = { drawRect(MiuixTheme.colorScheme.primary.copy(alpha = 0.62f)) },
+                onDrawSurface = { drawRect(surfaceColor) },
             )
             .clickable(
                 interactionSource = interaction,
