@@ -7,16 +7,16 @@ plugins {
 
 android {
     namespace = "com.example.miuixledger"
-    // 官方 1.0.0 示例用的就是 compileSdk 36 + AGP 8.13.0
+    // JetBrains Compose 1.12.0 要求 compileSdk >= 36
     compileSdk = 36
 
     defaultConfig {
         applicationId = "com.example.miuixledger"
-        // 31：Android 12 可装（有模糊）；33+ 才有完整折射（AGSL 着色器）
-        minSdk = 31
+        // 33：液态玻璃的 AGSL 折射着色器需要 Android 13+
+        minSdk = 33
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "2.0"
     }
 
     buildTypes {
@@ -31,6 +31,17 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging {
+        resources.excludes.addAll(
+            listOf(
+                "DebugProbesKt.bin",
+                "kotlin-tooling-metadata.json",
+                "kotlin/**",
+                "META-INF/*.version",
+                "META-INF/**/LICENSE.txt",
+            )
+        )
+    }
 }
 
 kotlin {
@@ -40,17 +51,22 @@ kotlin {
 }
 
 dependencies {
-    // 与官方 1.0.0 完全相同的依赖组合（androidx Compose 1.9.4）
+    // ===== Compose 基础：1.12.0（Miuix 0.9.4 与 backdrop 2.0.1 都要求此版本）=====
+    implementation("org.jetbrains.compose.foundation:foundation:1.12.0")
+    implementation("org.jetbrains.compose.ui:ui:1.12.0")
+    implementation("org.jetbrains.compose.ui:ui-graphics:1.12.0")
+
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.activity:activity-compose:1.11.0")
-    implementation("androidx.compose.foundation:foundation:1.9.4")
-    implementation("androidx.compose.ui:ui:1.9.4")
-    implementation("androidx.compose.ui:ui-graphics:1.9.4")
 
-    // Kyant0/AndroidLiquidGlass —— Backdrop 液态玻璃管线（Android 版）
-    implementation("io.github.kyant0:backdrop:1.0.0")
+    // ===== 库 1：Miuix（HyperOS 风格组件库）=====
+    implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.4")
+    implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.4")
+    implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.4")
+
+    // ===== 库 2：Kyant0/AndroidLiquidGlass（Backdrop 液态玻璃管线）=====
+    implementation("io.github.kyant0:backdrop:2.0.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-    // 说明：UI 只用 foundation + ui，不引入 material3 / 图标库，避免版本冲突
 }

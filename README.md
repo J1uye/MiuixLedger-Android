@@ -1,33 +1,70 @@
-# MiuixLedger Android（液态玻璃版）
+# MiuixLedger Android
 
-记账 App + [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)（Backdrop）液态玻璃管线。
-**Android 13+（API 33）** 可见完整折射效果。
+记账 App，**同时使用你指定的两个 GitHub 库**：
+
+| 库 | 作用 | 版本 |
+| --- | --- | --- |
+| [Miuix](https://github.com/compose-miuix-ui/miuix)（HyperOS 风格组件库） | 界面骨架与组件：`Scaffold`、`TopAppBar`、`Text`、`SmallTitle`、`Slider`、`Switch`、`TextField`、`Button`、`OverlayDialog`、`MiuixTheme` 主题 | 0.9.4 |
+| [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)（Backdrop） | 液态玻璃材质：底栏、FAB、卡片、放大镜的折射/磨砂/色散 | 2.0.1 |
+
+## 两个库如何共存
+
+两者依赖**同一个 Compose 版本**（JetBrains Compose 1.12.0），所以可以装进同一工程：
+
+| | Kotlin | Compose |
+| --- | --- | --- |
+| Miuix 0.9.4 | 2.4.20 | 1.12.0 |
+| backdrop 2.0.1 | 2.4.10 | 1.12.0 |
+| **工程取值** | **2.4.20** | **1.12.0** |
 
 ## 云端打包（无需本地环境）
 
 1. GitHub 新建仓库（Public）
-2. 把本文件夹**里面的全部内容**上传到仓库根目录
-   （含隐藏的 `.github` 文件夹——它负责自动打包）
-3. 等 5-8 分钟 → 进 **Actions** 页签 → 点最新运行 → 底部 **Artifacts** 下载
-4. 解压得到 `app-debug.apk`，传到手机安装（允许"未知来源"）
+2. 把本文件夹**里面的全部内容**上传到仓库根目录（含隐藏的 `.github`）
+3. 等 5-8 分钟 → **Actions** 页签 → 点最新运行 → 底部 **Artifacts** 下载
+4. 解压得到 `app-debug.apk` → 传手机安装（允许"未知来源"）
 
-## 技术栈（版本对齐官方 1.0.0 标签）
+## 玻璃管线（Backdrop API）
 
-| 组件 | 版本 | 说明 |
-| --- | --- | --- |
-| AGP | 8.13.0 | 与官方示例一致 |
-| Kotlin | 2.2.21 | 与官方示例一致 |
-| Compose | androidx 1.9.4 | 与官方示例一致 |
-| backdrop | 1.0.0 | **Android 版**（2.x 是 Compose Multiplatform 版，不兼容） |
+```kotlin
+.drawBackdrop(
+    backdrop = backdrop,
+    shape = { RoundedCornerShape(34.dp) },
+    effects = {
+        vibrancy()                      // 提饱和
+        blur(blurDp.toPx())             // 磨砂
+        lens(heightDp.toPx(), amountDp.toPx())  // 边缘折射
+    },
+    highlight = { Highlight.Default },
+    shadow = { Shadow(alpha = 0.14f) },
+)
+```
 
-## 玻璃管线（对应官方 API）
+⚠️ **关键**：`blur()` / `lens()` 的参数单位是**像素**，必须 `dp.toPx()` 换算，
+否则高密度屏上效果小到看不见。
 
-- 底栏 / FAB：`drawBackdrop(backdrop, shape, effects { vibrancy(); blur(); lens(refractionHeight, refractionAmount) }, highlight, shadow)`
-- 卡片：轻量 `blur()` 磨砂（列表滚动性能考虑）
-- 背景层：`Modifier.layerBackdrop(backdrop)` 采集为折射源
+## 滑动动态效果（官方 LiquidBottomTabs 移植）
+
+| 效果 | 实现 |
+| --- | --- |
+| 透镜跟随手指 | `translationX = 拖动值 × tabWidth` |
+| 果冻拉伸 | `scaleX/scaleY` + 速度修正（拖越快拉伸越猛） |
+| 按压折射增强 | `lens(高度 × pressProgress, 强度 × pressProgress)` |
+| 拖动色散 | 拖动时 `chromaticAberration = true` |
+| 松手回弹吸附 | spring 动画到最近 tab |
+| 整条联动 | `panelOffset` 反向位移 |
+| 文字被扭曲 | 折射 `rememberCombinedBackdrop(背景, 底栏层)` |
+
+> 折射靠「扭曲背后图案」体现，所以背景必须是**高对比斜条纹 + 色块**
+> （`GlassBackground.kt`），平滑渐变看不出效果。
+
+## 设置页
+
+可实时调节 4 个玻璃参数（折射强度/折射边缘/磨砂/白膜）+ 2 个开关
+（vibrancy、放大镜），用的是 Miuix 的 `Slider` / `Switch`。
 
 ## 已知说明
 
 - 本工程由 AI 生成，未本地编译验证（生成环境无 Android SDK）。
   若云端构建报错，把 Actions 的报错文字发回即可修复。
-- minSdk 31：Android 12 可安装（有模糊）；**Android 13+ 才有完整折射**。
+- minSdk 33：完整折射需要 **Android 13+**（AGSL RuntimeShader）。
