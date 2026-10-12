@@ -81,6 +81,28 @@
 > 折射靠「扭曲背后图案」体现，所以背景必须是**高对比斜条纹 + 色块**
 > （`GlassBackground.kt`），平滑渐变看不出效果。
 
+### 两条动画路径必须分开（点击 vs 拖动）
+
+这是实测踩出来的坑，改坏了会出现「点击直接跳到结果、没有滑动过程」：
+
+| | 弹簧参数 | 用途 |
+| --- | --- | --- |
+| `dragSpec` | stiffness 900 | 拖动跟手，要快要硬 |
+| `glideSpec` | stiffness 190、阻尼 0.78 | 点击/吸附滑动，约 370ms，过程可见 |
+
+三个关键点：
+
+1. **滑动动画必须写在协程体内**，不能包一层 `launch`：
+   `animateToValue()` 里 `press() → valueAnim.animateTo() → release()` 顺序执行，
+   否则 `release()` 会立刻抢占并打断滑动动画，表现就是「瞬间到位」。
+2. **`press()` / `release()` 各用 `Job` 持有并先 `cancel()`**，
+   避免两段动画互相抢同一个 `Animatable`。
+3. **点击时按位移注入速度冲量**（`glideVelAnim`）并衰减，
+   让点击滑行也有果冻拉伸，手感与拖动一致。
+
+另外 `pointerInput(Unit)` 的闭包**只创建一次**，里面读 `selected`/`onSelect`
+会永远拿到初始值 → 必须用 `rememberUpdatedState` 包一层。
+
 ## 已知说明
 
 - 本工程由 AI 生成，**未在本地编译验证**（生成环境无 Android SDK / 命令行被沙箱阻断）。

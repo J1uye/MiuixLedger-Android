@@ -36,6 +36,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +64,8 @@ import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -84,42 +87,104 @@ class DampedDrag(
     private val scaleXAnim = Animatable(1f)
     private val scaleYAnim = Animatable(1f)
 
+    /**
+     * 「滑过去」过程中人为注入的速度，用来驱动果冻拉伸。
+     * 拖动时速度来自手指，点击时没有手指，这里按位移补一个冲量，
+     * 让点击也有和拖动一致的液态拉伸感。
+     */
+    private val glideVelAnim = Animatable(0f)
+
     val value: Float get() = valueAnim.value
     val targetValue: Float get() = valueAnim.targetValue
     val pressProgress: Float get() = pressAnim.value
     val scaleX: Float get() = scaleXAnim.value
     val scaleY: Float get() = scaleYAnim.value
+    val glideVelocity: Float get() = glideVelAnim.value
 
-    private val valueSpec = spring<Float>(1f, 900f, 0.001f)
-    private val pressSpec = spring<Float>(1f, 1000f, 0.001f)
-    private val scaleXSpec = spring<Float>(0.6f, 250f, 0.001f)
-    private val scaleYSpec = spring<Float>(0.7f, 250f, 0.001f)
+    /** 拖动跟手用：够快，几乎无延迟 */
+    private val dragSpec = spring<Float>(1f, 900f, 0.001f)
+
+    /**
+     * 点击/吸附滑动用：明显柔和。
+     * 之前这里和拖动共用「很硬」的弹簧（stiffness 900 → 约 130ms 到位），
+     * 跨一整格时肉眼几乎看不出过程，所以点击显得「直接就是结果」。
+     * 现在 stiffness 190 + 轻微回弹（阻尼 0.78）→ 约 370ms，滑动过程清晰可见。
+     */
+    private val glideSpec = spring<Float>(0.78f, 190f, 0.001f)
+
+    private val pressSpec = spring<Float>(0.9f, 700f, 0.002f)
+    private val scaleSpec = spring<Float>(0.72f, 420f, 0.002f)
+
+    /** 点击滑行时的冲量衰减：比滑动本身略快，收尾时先回正 */
+    private val glideVelSpec = spring<Float>(0.62f, 320f, 0.002f)
+
+    // 用 Job 持有「按压/形变」动画，确保同一时刻只有一段在跑，
+    // 不再让 press() 与 release() 各起协程互相抢占、打断滑动动画。
+    private var pressJob: Job? = null
+    private var scaleJob: Job? = null
 
     fun press() {
-        scope.launch {
-            launch { pressAnim.animateTo(1f, pressSpec) }
-            launch { scaleXAnim.animateTo(pressedScale, scaleXSpec) }
-            launch { scaleYAnim.animateTo(pressedScale, scaleYSpec) }
+        pressJob?.cancel()
+        scaleJob?.cancel()
+        pressJob = scope.launch { pressAnim.animateTo(1f, pressSpec) }
+        scaleJob = scope.launch {
+            launch { scaleXAnim.animateTo(pressedScale, scaleSpec) }
+            launch { scaleYAnim.animateTo(pressedScale, scaleSpec) }
         }
     }
 
     fun release() {
-        scope.launch {
-            launch { pressAnim.animateTo(0f, pressSpec) }
-            launch { scaleXAnim.animateTo(1f, scaleXSpec) }
-            launch { scaleYAnim.animateTo(1f, scaleYSpec) }
+        pressJob?.cancel()
+        scaleJob?.cancel()
+        pressJob = scope.launch { pressAnim.animateTo(0f, pressSpec) }
+        scaleJob = scope.launch {
+            launch { scaleXAnim.animateTo(1f, scaleSpec) }
+            launch { scaleYAnim.animateTo(1f, scaleSpec) }
         }
     }
 
+    /** 拖动中：跟随手指（小步长，用 dragSpec 保持跟手） */
     fun updateValue(v: Float) {
         val target = v.coerceIn(valueRange)
-        scope.launch { valueAnim.animateTo(target, valueSpec) }
+        scope.launch { valueAnim.animateTo(target, dragSpec) }
     }
 
+    /**
+     * 点击 / 松手吸附：**在同一个协程里顺序执行** 按压 → 滑过去 → 回弹。
+     *
+     * 关键修正：
+     *  1. valueAnim.animateTo 直接写在协程体内（不再包一层 launch），
+     *     保证「按压」先起效、「滑动」完整跑完、「回弹」最后收尾。
+     *  2. 滑动用 glideSpec（柔和，约 370ms），拖动用 dragSpec（跟手），两者分开。
+     *  3. 按位移注入一个速度冲量并衰减 → 滑动途中出现果冻拉伸，
+     *     与拖动时的手感一致，而不是干巴巴地平移。
+     */
     fun animateToValue(v: Float) {
+        val target = v.coerceIn(valueRange)
+        val delta = target - valueAnim.value
         scope.launch {
             press()
-            launch { valueAnim.animateTo(v.coerceIn(valueRange), valueSpec) }
+            // 冲量与位移同向；系数让 1 格 ≈ 2.6，跨 2 格 ≈ 5.2，落在拉伸限幅内
+            glideVelAnim.snapTo(delta * 2.6f)
+            launch { glideVelAnim.animateTo(0f, glideVelSpec) }
+            valueAnim.animateTo(target, glideSpec)
+            release()
+        }
+    }
+
+    /** 拖动手势开始时调用，清掉点击残留的冲量，避免两者叠加 */
+    fun clearGlideVelocity() {
+        scope.launch { glideVelAnim.snapTo(0f) }
+    }
+
+    /**
+     * 点击「当前已选中的那一格」时用：原地按压回弹一下。
+     * 因为 selected 没变化，LaunchedEffect 不会触发，需要单独给个反馈。
+     */
+    fun pulse() {
+        scope.launch {
+            press()
+            delay(90)
             release()
         }
     }
@@ -160,6 +225,12 @@ fun LiquidTabBar(
         if (firstRun) firstRun = false else drag.animateToValue(selected.toFloat())
     }
 
+    // ⚠️ pointerInput(Unit) 的闭包只在首次组合时创建一次，之后不再重建。
+    //    直接在里面读 selected / onSelect 会永远拿到初始值（selected 恒为 0），
+    //    导致「点当前页」判断失效。用 rememberUpdatedState 让闭包读到最新值。
+    val currentSelected by rememberUpdatedState(selected)
+    val currentOnSelect by rememberUpdatedState(onSelect)
+
     val blurPx = with(density) { settings.blurRadius.dp.toPx() }
     val lensHPx = with(density) { settings.refractionHeight.dp.toPx() }
     val lensAPx = with(density) { settings.refractionAmount.dp.toPx() }
@@ -171,7 +242,8 @@ fun LiquidTabBar(
     ) {
         val tabWidthPx = ((constraints.maxWidth - padPx * 2f) / count).coerceAtLeast(1f)
         val progress = drag.pressProgress
-        val vel = velocityAnim.value
+        // 速度 = 手指拖动速度 + 点击滑行的注入冲量（两者不会同时存在）
+        val vel = velocityAnim.value + drag.glideVelocity
         val stretchX = 1f + (vel * 0.055f).coerceIn(-0.20f, 0.20f)
         val stretchY = 1f - (vel * 0.022f).coerceIn(-0.09f, 0.09f)
 
@@ -259,19 +331,36 @@ fun LiquidTabBar(
                 .pointerInput(Unit) {
                     detectTapGestures { offset ->
                         val idx = ((offset.x - padPx) / tabWidthPx).toInt().coerceIn(0, count - 1)
-                        onSelect(idx)
+                        if (idx == currentSelected) {
+                            // 点当前页：selected 不变，LaunchedEffect 不会触发，
+                            // 单独给一个原地按压回弹，避免「点了没反应」
+                            drag.pulse()
+                        } else {
+                            // 换页：交给 LaunchedEffect(selected) 驱动滑行动画
+                            currentOnSelect(idx)
+                        }
                     }
                 }
                 .pointerInput(Unit) {
                     detectDragGestures(
                         onDragStart = {
                             tracker.resetTracking()
+                            // 清掉点击残留的冲量，避免与手指速度叠加
+                            drag.clearGlideVelocity()
+                            scope.launch { velocityAnim.snapTo(0f) }
                             drag.press()
                         },
                         onDragEnd = {
                             val target = drag.value.roundToInt().coerceIn(0, count - 1)
-                            drag.animateToValue(target.toFloat())
-                            onSelect(target)
+                            if (target == currentSelected) {
+                                // 同格松手：selected 不变 → LaunchedEffect 不会触发，
+                                // 需要自己吸附回去
+                                drag.animateToValue(target.toFloat())
+                            } else {
+                                // 跨格：交给 LaunchedEffect(selected) 统一驱动滑动，
+                                // 避免这里和它各跑一次动画导致抖动
+                                currentOnSelect(target)
+                            }
                             scope.launch {
                                 launch { velocityAnim.animateTo(0f, spring(0.7f, 260f, 0.001f)) }
                                 launch { panelOffsetDp = 0f }
