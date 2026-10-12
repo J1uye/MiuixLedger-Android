@@ -105,9 +105,31 @@ jobs:
           name: build-logs
           path: build.log
 
+      # 读取 versionName 给产物改名，这样下载的 APK 自带版本号，
+      # 不用装到手机上才知道装的是哪一版。
+      - name: Read version name
+        if: success()
+        id: ver
+        run: |
+          VN=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts | head -1)
+          VC=$(grep -oP 'versionCode\s*=\s*\K[0-9]+' app/build.gradle.kts | head -1)
+          echo "name=${VN:-unknown}" >> "$GITHUB_OUTPUT"
+          echo "code=${VC:-0}" >> "$GITHUB_OUTPUT"
+          echo "versionName=$VN  versionCode=$VC"
+
+      - name: Rename APK with version
+        if: success()
+        run: |
+          mkdir -p out
+          for f in app/build/outputs/apk/debug/*.apk; do
+            [ -e "$f" ] || continue
+            cp "$f" "out/MiuixLedger-v${{ steps.ver.outputs.name }}-build${{ steps.ver.outputs.code }}.apk"
+          done
+          ls -l out/
+
       - name: Upload APK artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: MiuixLedger-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: MiuixLedger-v${{ steps.ver.outputs.name }}-apk
+          path: out/*.apk

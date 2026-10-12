@@ -1,9 +1,12 @@
 package com.example.miuixledger.ui
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -69,7 +72,33 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import kotlin.math.abs
 import kotlin.math.roundToInt
+
+/** 滑行时长的下界（ms）：几乎原地时用，保证「按一下就有反应」 */
+private const val GLIDE_MIN_MS = 150
+
+/** 滑行时长的上界（ms）：跨 2 格时用，保证滑动过程看得清 */
+private const val GLIDE_MAX_MS = 320
+
+/** 透镜缩回 dock 的时长（ms） */
+private const val SETTLE_MS = 200
+
+/** 点击时透镜「按下鼓起」的时长（ms） */
+private const val PRESS_MS = 120
+
+/**
+ * 按位移距离决定滑行时长。
+ *
+ * 这是修「到位后停留太久」的关键：
+ *  - 点击跨整格（|delta| 大）→ 需要滑行过程，用较长时长
+ *  - 拖动松手（透镜已在目标附近，|delta| 很小）→ 几乎不用滑，
+ *    时长自动缩短，于是复位立刻开始，不会干等
+ */
+private fun glideDurationFor(delta: Float): Int {
+    val d = abs(delta).coerceAtMost(2f)
+    return (GLIDE_MIN_MS + (GLIDE_MAX_MS - GLIDE_MIN_MS) * (d / 2f)).toInt()
+}
 
 /**
  * 拖拽动画状态机 —— 对应官方 catalog 的 DampedDragAnimation。
@@ -105,70 +134,107 @@ class DampedDrag(
     private val dragSpec = spring<Float>(1f, 900f, 0.001f)
 
     /**
-     * 点击/吸附滑动用：明显柔和。
-     * 之前这里和拖动共用「很硬」的弹簧（stiffness 900 → 约 130ms 到位），
-     * 跨一整格时肉眼几乎看不出过程，所以点击显得「直接就是结果」。
-     * 现在 stiffness 190 + 轻微回弹（阻尼 0.78）→ 约 370ms，滑动过程清晰可见。
+     * 按压生长 / 复位都用定长 tween，让时间线可精确编排。
+     * 用弹簧的话「何时算结束」不可控，复位时机就会漂移，
+     * 表现为「透镜到位后还鼓着不动一段时间」。
      */
-    private val glideSpec = spring<Float>(0.78f, 190f, 0.001f)
+    private val pressGrowSpec = tween<Float>(PRESS_MS, easing = FastOutSlowInEasing)
+    private val settleSpec = tween<Float>(SETTLE_MS, easing = FastOutSlowInEasing)
 
+    /** 拖动手势期间用的按压反馈：弹簧更自然（此处不追求精确收尾） */
     private val pressSpec = spring<Float>(0.9f, 700f, 0.002f)
     private val scaleSpec = spring<Float>(0.72f, 420f, 0.002f)
-
-    /** 点击滑行时的冲量衰减：比滑动本身略快，收尾时先回正 */
-    private val glideVelSpec = spring<Float>(0.62f, 320f, 0.002f)
 
     // 用 Job 持有「按压/形变」动画，确保同一时刻只有一段在跑，
     // 不再让 press() 与 release() 各起协程互相抢占、打断滑动动画。
     private var pressJob: Job? = null
     private var scaleJob: Job? = null
 
-    fun press() {
+    /** 位置动画的 Job：拖动跟手 / 滑行 / 吸附都复用它，避免协程堆积 */
+    private var valueJob: Job? = null
+
+    /** 按压：生长时长可指定（点击路径用定长 tween，拖动路径用弹簧） */
+    fun press(
+        pressAnimation: AnimationSpec<Float> = pressSpec,
+        scaleAnimation: AnimationSpec<Float> = scaleSpec,
+    ) {
         pressJob?.cancel()
         scaleJob?.cancel()
-        pressJob = scope.launch { pressAnim.animateTo(1f, pressSpec) }
+        pressJob = scope.launch { pressAnim.animateTo(1f, pressAnimation) }
         scaleJob = scope.launch {
-            launch { scaleXAnim.animateTo(pressedScale, scaleSpec) }
-            launch { scaleYAnim.animateTo(pressedScale, scaleSpec) }
+            launch { scaleXAnim.animateTo(pressedScale, scaleAnimation) }
+            launch { scaleYAnim.animateTo(pressedScale, scaleAnimation) }
         }
     }
 
-    fun release() {
+    /** 复位：缩回 dock 的时长可指定 */
+    fun release(
+        pressAnimation: AnimationSpec<Float> = pressSpec,
+        scaleAnimation: AnimationSpec<Float> = scaleSpec,
+    ) {
         pressJob?.cancel()
         scaleJob?.cancel()
-        pressJob = scope.launch { pressAnim.animateTo(0f, pressSpec) }
+        pressJob = scope.launch { pressAnim.animateTo(0f, pressAnimation) }
         scaleJob = scope.launch {
-            launch { scaleXAnim.animateTo(1f, scaleSpec) }
-            launch { scaleYAnim.animateTo(1f, scaleSpec) }
+            launch { scaleXAnim.animateTo(1f, scaleAnimation) }
+            launch { scaleYAnim.animateTo(1f, scaleAnimation) }
         }
-    }
-
-    /** 拖动中：跟随手指（小步长，用 dragSpec 保持跟手） */
-    fun updateValue(v: Float) {
-        val target = v.coerceIn(valueRange)
-        scope.launch { valueAnim.animateTo(target, dragSpec) }
     }
 
     /**
-     * 点击 / 松手吸附：**在同一个协程里顺序执行** 按压 → 滑过去 → 回弹。
+     * 拖动中：跟随手指（小步长，用 dragSpec 保持跟手）。
+     * 复用同一个 Job，避免每帧起新协程造成堆积、松手后动画还在追赶。
+     */
+    fun updateValue(v: Float) {
+        val target = v.coerceIn(valueRange)
+        valueJob?.cancel()
+        valueJob = scope.launch { valueAnim.animateTo(target, dragSpec) }
+    }
+
+    /** 拖动中：直接设置位置，不做动画（最跟手，松手时无需再滑） */
+    fun snapValue(v: Float) {
+        val target = v.coerceIn(valueRange)
+        valueJob?.cancel()
+        valueJob = scope.launch { valueAnim.snapTo(target) }
+    }
+
+    /**
+     * 点击 / 松手吸附：按压 → 滑过去 → 复位，**并且同时收尾**。
      *
-     * 关键修正：
-     *  1. valueAnim.animateTo 直接写在协程体内（不再包一层 launch），
-     *     保证「按压」先起效、「滑动」完整跑完、「回弹」最后收尾。
-     *  2. 滑动用 glideSpec（柔和，约 370ms），拖动用 dragSpec（跟手），两者分开。
-     *  3. 按位移注入一个速度冲量并衰减 → 滑动途中出现果冻拉伸，
-     *     与拖动时的手感一致，而不是干巴巴地平移。
+     * 关键时序（这是修「到位后停留太久」的核心）：
+     *   glideMs 由位移距离算出（见 glideDurationFor）：
+     *     点击跨 2 格 → 320ms，跨 1 格 → 235ms，
+     *     拖动松手（已到位）→ 150ms
+     *   0ms              按压 + 滑行开始
+     *   glideMs-SETTLE   复位开始（若 glideMs < SETTLE 则立即开始）
+     *   glideMs          滑行与复位**同一时刻结束** → 一落地就正好收回 dock
+     *
+     * ⚠️ 两个坑：
+     *  1. 不能写成 `animateTo(target, spec)` 之后再 `release()` ——
+     *     那是「先滑完、再缩回」的串行，中间鼓着不动就是被抱怨的停留。
+     *  2. 滑行时长不能写死。拖动松手时透镜已经到位，写死长时长会让它
+     *     在原地干等，同样表现为「停留」。必须按距离动态给时长。
      */
     fun animateToValue(v: Float) {
         val target = v.coerceIn(valueRange)
         val delta = target - valueAnim.value
-        scope.launch {
-            press()
+        val glideMs = glideDurationFor(delta)
+        // 取消拖动残留的位置动画，避免两段动画抢同一个 Animatable
+        valueJob?.cancel()
+        valueJob = scope.launch {
+            // 按压用定长 tween：生长结束时刻精确，便于与滑行、复位对齐
+            press(pressGrowSpec, pressGrowSpec)
             // 冲量与位移同向；系数让 1 格 ≈ 2.6，跨 2 格 ≈ 5.2，落在拉伸限幅内
             glideVelAnim.snapTo(delta * 2.6f)
-            launch { glideVelAnim.animateTo(0f, glideVelSpec) }
-            valueAnim.animateTo(target, glideSpec)
-            release()
+            launch { glideVelAnim.animateTo(0f, tween(glideMs, easing = FastOutSlowInEasing)) }
+
+            // 与滑行并行：等滑行接近尾声再开始复位，两者同时结束
+            launch {
+                delay((glideMs - SETTLE_MS).coerceAtLeast(0).toLong())
+                release(settleSpec, settleSpec)
+            }
+
+            valueAnim.animateTo(target, tween(glideMs, easing = FastOutSlowInEasing))
         }
     }
 
@@ -183,9 +249,9 @@ class DampedDrag(
      */
     fun pulse() {
         scope.launch {
-            press()
+            press(pressGrowSpec, pressGrowSpec)
             delay(90)
-            release()
+            release(settleSpec, settleSpec)
         }
     }
 }
@@ -219,6 +285,15 @@ fun LiquidTabBar(
     val velocityAnim = remember { Animatable(0f) }
     var panelOffsetDp by remember { mutableFloatStateOf(0f) }
     val tracker = remember { VelocityTracker() }
+
+    /**
+     * 拖动期间的透镜位置，用普通状态同步累加。
+     *
+     * 不能靠 `drag.targetValue` 累加：snapValue 是异步的（协程里执行），
+     * 快速拖动时它还没执行完，读到的 targetValue 是旧值，
+     * 累加就会丢掉一部分拖动量，表现为「拖了但没跟上」。
+     */
+    var dragAccum by remember { mutableFloatStateOf(0f) }
 
     var firstRun by remember { mutableStateOf(true) }
     LaunchedEffect(selected) {
@@ -348,10 +423,12 @@ fun LiquidTabBar(
                             // 清掉点击残留的冲量，避免与手指速度叠加
                             drag.clearGlideVelocity()
                             scope.launch { velocityAnim.snapTo(0f) }
+                            // 以当前透镜位置为拖动起点（同步记录，避免异步读到旧值）
+                            dragAccum = drag.value
                             drag.press()
                         },
                         onDragEnd = {
-                            val target = drag.value.roundToInt().coerceIn(0, count - 1)
+                            val target = dragAccum.roundToInt().coerceIn(0, count - 1)
                             if (target == currentSelected) {
                                 // 同格松手：selected 不变 → LaunchedEffect 不会触发，
                                 // 需要自己吸附回去
@@ -379,7 +456,12 @@ fun LiquidTabBar(
                         val v = tracker.calculateVelocity().x / tabWidthPx
                         scope.launch { velocityAnim.snapTo(v.coerceIn(-8f, 8f)) }
                         panelOffsetDp = (-v * 0.55f).coerceIn(-4f, 4f)
-                        drag.updateValue(drag.targetValue + dragAmount.x / tabWidthPx)
+                        // 拖动时直接把位置写到位（不做动画）：
+                        // 这样松手时透镜已经在手指位置，animateToValue 的位移很小，
+                        // 滑行时长自动缩到最短，复位立刻开始 → 不会「停留」
+                        dragAccum = (dragAccum + dragAmount.x / tabWidthPx)
+                            .coerceIn(0f, (count - 1).toFloat())
+                        drag.snapValue(dragAccum)
                     }
                 }
         )

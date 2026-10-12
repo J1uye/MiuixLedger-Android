@@ -24,8 +24,8 @@ android {
         // 33：液态玻璃的 AGSL 折射着色器需要 Android 13+（用户设备为 Android 17）
         minSdk = 33
         targetSdk = 37
-        versionCode = 4
-        versionName = "2.2"
+        versionCode = 5
+        versionName = "2.3"
     }
 
     buildTypes {
@@ -39,6 +39,9 @@ android {
     }
     buildFeatures {
         compose = true
+        // 打开后可在代码里读 BuildConfig.VERSION_NAME / VERSION_CODE，
+        // 用于「关于」页显示版本号（AGP 8+ 默认关闭）。
+        buildConfig = true
     }
     packaging {
         resources {

@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import com.example.miuixledger.BuildConfig
 import com.example.miuixledger.data.ExpenseRecord
 import com.example.miuixledger.data.RecordType
 import com.kyant.backdrop.Backdrop
@@ -237,6 +238,11 @@ fun SettingsPage(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
                 insidePadding = 18.dp,
             ) {
+                Text(
+                    text = "版本 ${BuildConfig.VERSION_NAME}（build ${BuildConfig.VERSION_CODE}）",
+                    style = MiuixTheme.textStyles.subtitle,
+                )
+                Spacer(Modifier.height(10.dp))
                 Text(
                     text = "界面组件来自 Miuix（HyperOS 风格），玻璃材质来自 " +
                         "Kyant0/AndroidLiquidGlass（Backdrop）：\n" +
