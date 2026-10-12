@@ -32,7 +32,6 @@ import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.shadow.Shadow
-import com.kyant.shapes.RoundedRectangularShape
 
 /**
  * 玻璃卡片：内容列表里的卡片使用静态降级（EmptyBackdrop + blur），
@@ -49,7 +48,7 @@ fun GlassCard(
         modifier = modifier
             .drawBackdrop(
                 backdrop = EmptyBackdrop,
-                shape = { RoundedRectangularShape(16.dp.toPx()) },
+                shape = { RoundedCornerShape(16.dp) },
                 effects = {
                     blur(14f)
                 },
@@ -79,7 +78,7 @@ fun AddRecordSheet(
                 .padding(horizontal = 24.dp)
                 .drawBackdrop(
                     backdrop = EmptyBackdrop,
-                    shape = { RoundedRectangularShape(24.dp.toPx()) },
+                    shape = { RoundedCornerShape(24.dp) },
                     effects = { blur(16f) },
                     highlight = { Highlight.Default },
                     shadow = { Shadow(alpha = 0.18f) },
