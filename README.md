@@ -4,18 +4,21 @@
 
 | 库 | 作用 | 版本 |
 | --- | --- | --- |
-| [Miuix](https://github.com/compose-miuix-ui/miuix)（HyperOS 风格组件库） | 界面骨架与组件：`Scaffold`、`TopAppBar`、`Text`、`SmallTitle`、`Slider`、`Switch`、`TextField`、`Button`、`OverlayDialog`、`MiuixTheme` 主题 | 0.9.4 |
+| [Miuix](https://github.com/compose-miuix-ui/miuix)（HyperOS 风格组件库） | 界面组件：`Scaffold`、`TopAppBar`、`Text`、`SmallTitle`、`Slider`、`Switch`、`TextField`、`Button`、`OverlayDialog`、`MiuixTheme` 主题 | 0.9.4 |
 | [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)（Backdrop） | 液态玻璃材质：底栏、FAB、卡片、放大镜的折射/磨砂/色散 | 2.0.1 |
 
-## 两个库如何共存
+## 工具链（对齐两个库的官方工程）
 
-两者依赖**同一个 Compose 版本**（JetBrains Compose 1.12.0），所以可以装进同一工程：
+两个库都要求 **JetBrains Compose 1.12.x**，而 Compose 1.12 按 **API 37** 编译。
+从 API 37 起 Google 改用 minor version 命名（只有 `android-37.0`，没有 `android-37`），
+**因此必须用 AGP 9.x**：
 
-| | Kotlin | Compose |
+| | 版本 | 依据 |
 | --- | --- | --- |
-| Miuix 0.9.4 | 2.4.20 | 1.12.0 |
-| backdrop 2.0.1 | 2.4.10 | 1.12.0 |
-| **工程取值** | **2.4.20** | **1.12.0** |
+| AGP | 9.4.1 | Miuix 官方工程 |
+| Gradle | 9.8.1 | Miuix 官方工程 |
+| Kotlin | 2.4.21 | Miuix 0.9.4 用 2.4.20、backdrop 2.0.1 用 2.4.10，取 ≥ 两者 |
+| compileSdk | 37（`release(37){ minorApiLevel = 0 }`） | Compose 1.12 要求 |
 
 ## 云端打包（无需本地环境）
 
@@ -31,8 +34,8 @@
     backdrop = backdrop,
     shape = { RoundedCornerShape(34.dp) },
     effects = {
-        vibrancy()                      // 提饱和
-        blur(blurDp.toPx())             // 磨砂
+        vibrancy()                              // 提饱和
+        blur(blurDp.toPx())                     // 磨砂
         lens(heightDp.toPx(), amountDp.toPx())  // 边缘折射
     },
     highlight = { Highlight.Default },
@@ -48,20 +51,14 @@
 | 效果 | 实现 |
 | --- | --- |
 | 透镜跟随手指 | `translationX = 拖动值 × tabWidth` |
-| 果冻拉伸 | `scaleX/scaleY` + 速度修正（拖越快拉伸越猛） |
+| 果冻拉伸 | `scaleX/scaleY` + 速度修正 |
 | 按压折射增强 | `lens(高度 × pressProgress, 强度 × pressProgress)` |
 | 拖动色散 | 拖动时 `chromaticAberration = true` |
 | 松手回弹吸附 | spring 动画到最近 tab |
-| 整条联动 | `panelOffset` 反向位移 |
 | 文字被扭曲 | 折射 `rememberCombinedBackdrop(背景, 底栏层)` |
 
 > 折射靠「扭曲背后图案」体现，所以背景必须是**高对比斜条纹 + 色块**
 > （`GlassBackground.kt`），平滑渐变看不出效果。
-
-## 设置页
-
-可实时调节 4 个玻璃参数（折射强度/折射边缘/磨砂/白膜）+ 2 个开关
-（vibrancy、放大镜），用的是 Miuix 的 `Slider` / `Switch`。
 
 ## 已知说明
 

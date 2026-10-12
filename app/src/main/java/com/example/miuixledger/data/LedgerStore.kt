@@ -6,12 +6,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 
-@Serializable
+enum class RecordType(val label: String) {
+    EXPENSE("支出"),
+    INCOME("收入"),
+}
+
 data class ExpenseRecord(
     val id: Long,
     val amount: Double,
@@ -20,12 +23,6 @@ data class ExpenseRecord(
     val time: Long,
     val type: RecordType,
 )
-
-@Serializable
-enum class RecordType(val label: String) {
-    EXPENSE("支出"),
-    INCOME("收入"),
-}
 
 object Categories {
     val expense = listOf("餐饮", "交通", "购物", "居住", "娱乐", "医疗", "其他")
@@ -36,10 +33,14 @@ object Categories {
     }
 }
 
-/** JSON 文件持久化（app 私有目录） */
+/**
+ * JSON 文件持久化（app 私有目录）。
+ *
+ * 用 Android 内置的 org.json，避免引入 kotlinx-serialization 及其编译插件
+ * （AGP 9 内置 Kotlin，少一个插件少一处版本冲突）。
+ */
 class LedgerStore(context: Context) {
 
-    private val json = Json { ignoreUnknownKeys = true }
     private val file = File(context.filesDir, "ledger.json")
     private val mutex = Mutex()
 
@@ -49,8 +50,7 @@ class LedgerStore(context: Context) {
     init {
         runCatching {
             if (file.exists()) {
-                _records.value = json.decodeFromString<List<ExpenseRecord>>(file.readText())
-                    .sortedByDescending { it.time }
+                _records.value = parse(file.readText()).sortedByDescending { it.time }
             }
         }
     }
@@ -71,6 +71,40 @@ class LedgerStore(context: Context) {
     }
 
     private fun persist() {
-        runCatching { file.writeText(json.encodeToString(_records.value)) }
+        runCatching {
+            val arr = JSONArray()
+            _records.value.forEach { r ->
+                arr.put(
+                    JSONObject().apply {
+                        put("id", r.id)
+                        put("amount", r.amount)
+                        put("category", r.category)
+                        put("note", r.note)
+                        put("time", r.time)
+                        put("type", r.type.name)
+                    }
+                )
+            }
+            file.writeText(arr.toString())
+        }
+    }
+
+    private fun parse(text: String): List<ExpenseRecord> {
+        if (text.isBlank()) return emptyList()
+        val arr = JSONArray(text)
+        val list = ArrayList<ExpenseRecord>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            list += ExpenseRecord(
+                id = o.optLong("id"),
+                amount = o.optDouble("amount", 0.0),
+                category = o.optString("category", "其他"),
+                note = o.optString("note", ""),
+                time = o.optLong("time"),
+                type = runCatching { RecordType.valueOf(o.optString("type", "EXPENSE")) }
+                    .getOrDefault(RecordType.EXPENSE),
+            )
+        }
+        return list
     }
 }

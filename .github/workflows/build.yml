@@ -18,11 +18,12 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      # 说明：GitHub 的 ubuntu-latest 运行器已预装 Android SDK，
-      # 不要再执行 android-actions/setup-android —— 它内部调用的 "sdkmanager tools"
-      # 包已被 Google 移除，会直接报 Failed to find package 'tools'。
-
-      - name: Ensure Android SDK platform 36 + build-tools
+      # 说明：
+      #  - ubuntu-latest 已预装 Android SDK，不要执行 android-actions/setup-android
+      #    （它内部调用的 "sdkmanager tools" 包已被 Google 移除，会直接报错）。
+      #  - API 37 起 Google 改用 minor version 命名：仓库里是 platforms;android-37.0，
+      #    没有 platforms;android-37。这里装 37.0 并接受许可。
+      - name: Ensure Android SDK 37 + accept licenses
         run: |
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           echo "SDK=$SDK"
@@ -30,17 +31,22 @@ jobs:
           [ -x "$SDKMGR" ] || SDKMGR=$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
           echo "SDKMGR=$SDKMGR"
           if [ -x "$SDKMGR" ]; then
-            yes | "$SDKMGR" --sdk_root="$SDK" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null 2>&1 || true
+            yes | "$SDKMGR" --sdk_root="$SDK" --licenses > /dev/null 2>&1 || true
+            for pkg in "platforms;android-37.0" "platforms;android-36"; do
+              echo "installing $pkg"
+              yes | "$SDKMGR" --sdk_root="$SDK" --install "$pkg" > /dev/null 2>&1 || echo "  (skip $pkg)"
+            done
           fi
-          echo "--- installed platforms ---"
+          echo "--- platforms ---"
           ls "$SDK/platforms" || true
-          echo "--- installed build-tools ---"
+          echo "--- build-tools ---"
           ls "$SDK/build-tools" || true
 
-      - name: Setup Gradle 8.13
+      # AGP 9.4.1 需要 Gradle 9.x（Miuix 官方用 9.8.1）
+      - name: Setup Gradle 9.8.1
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.13"
+          gradle-version: "9.8.1"
 
       - name: Show toolchain info
         run: |
