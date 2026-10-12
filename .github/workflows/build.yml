@@ -18,29 +18,23 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      # 说明：
-      #  - ubuntu-latest 已预装 Android SDK，不要执行 android-actions/setup-android
-      #    （它内部调用的 "sdkmanager tools" 包已被 Google 移除，会直接报错）。
-      #  - API 37 起 Google 改用 minor version 命名：仓库里是 platforms;android-37.0，
-      #    没有 platforms;android-37。这里装 37.0 并接受许可。
+      # ubuntu-latest 已预装 Android SDK，不要执行 android-actions/setup-android
+      # （它内部调用的 "sdkmanager tools" 包已被 Google 移除，会直接报错）。
+      # API 37 起 Google 改用 minor version 命名：仓库里是 platforms;android-37.0。
       - name: Ensure Android SDK 37 + accept licenses
         run: |
           SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
           echo "SDK=$SDK"
           SDKMGR="$SDK/cmdline-tools/latest/bin/sdkmanager"
           [ -x "$SDKMGR" ] || SDKMGR=$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
-          echo "SDKMGR=$SDKMGR"
           if [ -x "$SDKMGR" ]; then
             yes | "$SDKMGR" --sdk_root="$SDK" --licenses > /dev/null 2>&1 || true
-            for pkg in "platforms;android-37.0" "platforms;android-36"; do
-              echo "installing $pkg"
-              yes | "$SDKMGR" --sdk_root="$SDK" --install "$pkg" > /dev/null 2>&1 || echo "  (skip $pkg)"
+            for pkg in "platforms;android-37.0" "build-tools;37.0.0" "platforms;android-36"; do
+              yes | "$SDKMGR" --sdk_root="$SDK" --install "$pkg" > /dev/null 2>&1 || true
             done
           fi
-          echo "--- platforms ---"
-          ls "$SDK/platforms" || true
-          echo "--- build-tools ---"
-          ls "$SDK/build-tools" || true
+          echo "--- platforms ---"; ls "$SDK/platforms" || true
+          echo "--- build-tools ---"; ls "$SDK/build-tools" || true
 
       # AGP 9.4.1 需要 Gradle 9.x（Miuix 官方用 9.8.1）
       - name: Setup Gradle 9.8.1
@@ -54,9 +48,41 @@ jobs:
           gradle --version
 
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon --stacktrace
+        run: |
+          set +e
+          gradle assembleDebug --no-daemon --stacktrace > build.log 2>&1
+          code=$?
+          if [ $code -ne 0 ]; then
+            echo "===== BUILD FAILED (exit $code) ====="
+            tail -n 120 build.log
+
+            # ① 写入 job summary：Actions 页面可直接看到，便于复制
+            {
+              echo "## ❌ Build failed (exit $code)"
+              echo ""
+              echo '```text'
+              tail -n 150 build.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            # ② 逐行发注解：注解可通过公开 API 读取，便于远程诊断
+            tail -n 25 build.log | while IFS= read -r line; do
+              printf '::error title=Gradle::%s\n' "$(printf '%s' "$line" | tr -d '\r')"
+            done
+            exit $code
+          fi
+          echo "BUILD OK"
+          ls -l app/build/outputs/apk/debug/ || true
+
+      - name: Upload build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: build.log
 
       - name: Upload APK artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: MiuixLedger-debug-apk

@@ -1,39 +1,31 @@
-@file:Suppress("UnstableApiUsage")
-
 plugins {
+    // ===== 与官方 androidApp 模块完全一致 =====
+    // AGP 9 内置 Kotlin 支持，因此只应用这两个插件。
+    // 不应用 org.jetbrains.kotlin.android（AGP 9 下会直接报错并中断构建）。
     id("com.android.application")
-    // 显式应用 Kotlin 插件：精确控制编译器版本为 2.4.21。
-    // 必须 ≥ 2.4.20，否则读不了 Miuix 0.9.4（用 Kotlin 2.4.20 编译）的库元数据。
-    // 注意：应用 KGP 后 AGP 9 会自动关闭其内置 Kotlin，不会冲突。
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.example.miuixledger"
 
-    // ===== 本次修复的两个关键点 =====
-    // ① 用 AGP 9 的新 DSL 指定 compileSdk（官方 example/android 的写法）：
-    //    从 API 37 起 Android SDK 改用 minor version 命名，官方仓库里只有
-    //    platforms;android-37.0 / 37.1 / 37.2，没有 platforms;android-37。
-    // ② Compose 1.12.x（Miuix 0.9.4 与 backdrop 2.0.1 的共同依赖）按 API 37 编译。
-    //    compileSdk 低于 37 时 AAR 元数据校验会报：
-    //      "requires libraries and applications that depend on it to compile
-    //       against version 37 or later of the Android APIs"
-    //    该校验在配置之后、编译之前执行，所以表现为「构建几十秒即失败」。
-    compileSdk {
-        version = release(37) {
-            minorApiLevel = 0
-        }
-    }
+    // compileSdk 37：官方 androidApp 就是这么写的。
+    // Compose 1.12.0（Miuix 0.9.4 与 backdrop 2.0.1 的共同依赖）按 API 37 编译，
+    // 低于 37 时 AAR 元数据校验会报
+    //   "requires libraries and applications that depend on it to compile
+    //    against version 37 or later of the Android APIs"
+    // 该校验在配置之后、编译之前执行，所以表现为「构建几十秒即失败」。
+    compileSdk = 37
+    // 与官方 androidApp 一致；AGP 9 需要 build-tools 37.0.0
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "com.example.miuixledger"
         // 33：液态玻璃的 AGSL 折射着色器需要 Android 13+（用户设备为 Android 17）
         minSdk = 33
         targetSdk = 37
-        versionCode = 3
-        versionName = "2.1"
+        versionCode = 4
+        versionName = "2.2"
     }
 
     buildTypes {
@@ -50,7 +42,7 @@ android {
     }
     packaging {
         resources {
-            excludes += setOf(
+            excludes += arrayOf(
                 "DebugProbesKt.bin",
                 "kotlin-tooling-metadata.json",
                 "kotlin/**",
@@ -64,32 +56,23 @@ android {
     }
 }
 
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-    }
-}
+// 注意：这里没有 kotlin { } 配置块。
+// AGP 9 内置 Kotlin 会自动对齐 jvmTarget 与 compileOptions，无需手动设置；
+// 手动写反而可能因扩展不存在而报错。
 
 dependencies {
-    // ===== Compose 基础：androidx 1.12.0 =====
-    // Miuix 与 backdrop 的依赖链最终都落到 androidx.compose.*:1.12.0，
-    // 这里声明同版本，避免版本分叉。
-    implementation("androidx.compose.ui:ui:1.12.0")
-    implementation("androidx.compose.foundation:foundation:1.12.0")
-    implementation("androidx.compose.ui:ui-graphics:1.12.0")
-    implementation("androidx.compose.runtime:runtime:1.12.0")
-
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("androidx.activity:activity-compose:1.13.0")
 
     // ===== 库 1：Miuix（HyperOS 风格组件库）=====
+    // 只引入 miuix-ui：本项目用到的组件（Scaffold/TopAppBar/Text/SmallTitle/
+    // Slider/Switch/TextField/Button/OverlayDialog/MiuixTheme）都在这个模块。
     implementation("top.yukonga.miuix.kmp:miuix-ui-android:0.9.4")
-    implementation("top.yukonga.miuix.kmp:miuix-preference-android:0.9.4")
-    implementation("top.yukonga.miuix.kmp:miuix-icons-android:0.9.4")
 
     // ===== 库 2：Kyant0/AndroidLiquidGlass（Backdrop 液态玻璃管线）=====
     implementation("io.github.kyant0:backdrop:2.0.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     // 持久化使用 Android 内置 org.json，无需 kotlinx-serialization 及其编译插件
+    // Compose 版本不显式声明：由上面两个库的依赖链带入（均为 1.12.0）
 }
