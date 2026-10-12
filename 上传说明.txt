@@ -1,0 +1,8 @@
+# 上传 GitHub 前，把本文件夹压缩成 zip 或用 GitHub 网页 "uploading an existing folder" 拖入即可。
+# 需要上传的内容：
+# - .github/workflows/build.yml   （云端自动打包配置，注意是隐藏文件夹）
+# - app/                          （全部源码）
+# - build.gradle.kts / settings.gradle.kts / gradle.properties
+# - README.md
+#
+# 不要上传：build/、.gradle/、.idea/（如果有的话，已在 .gitignore 中排除）
