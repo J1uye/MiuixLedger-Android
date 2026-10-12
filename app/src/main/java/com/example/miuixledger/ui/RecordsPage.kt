@@ -2,19 +2,21 @@ package com.example.miuixledger.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,53 +26,52 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.miuixledger.data.ExpenseRecord
 import com.example.miuixledger.data.RecordType
+import com.kyant.backdrop.Backdrop
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-private val ExpenseRed = Color(0xFFE94634)
-private val IncomeBlue = Color(0xFF3482FF)
-private val SubText = Color(0xFF8C93B0)
-private val ContentDark = Color(0xFF2A3142)
-
 private val dayFmt = DateTimeFormatter.ofPattern("M月d日 EEEE")
 private val timeFmt = DateTimeFormatter.ofPattern("HH:mm")
 
-internal fun formatMoney(amount: Double): String = "%,.2f".format(amount)
-
-/** 明细页：玻璃卡片流水列表，点按删除 */
+/** 明细页：玻璃卡片流水，点按删除 */
 @Composable
-fun RecordsPage(records: List<ExpenseRecord>, onDelete: (ExpenseRecord) -> Unit) {
+fun RecordsPage(
+    backdrop: Backdrop,
+    records: List<ExpenseRecord>,
+    onDelete: (ExpenseRecord) -> Unit,
+) {
     var pendingDelete by remember { mutableStateOf<ExpenseRecord?>(null) }
 
     if (records.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                "还没有记录\n点右下角 ＋ 记一笔",
-                style = TextStyle(fontSize = 14.sp, color = SubText, lineHeight = 22.sp),
+            BasicText(
+                text = "还没有记录\n点右下角 ＋ 记一笔",
+                style = textStyle(15f, FontWeight.Normal, AppColors.Sub).copy(textAlign = TextAlign.Center),
             )
         }
     } else {
+        val grouped = remember(records) { groupByDay(records) }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 12.dp, bottom = 130.dp),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 140.dp),
         ) {
-            val grouped = groupByDay(records)
             grouped.forEach { (day, dayRecords) ->
-                item(key = "h_${day}_${dayRecords.first().id}") { DayHeader(day, dayRecords) }
-                items(dayRecords.size, key = { dayRecords[it].id }) { i ->
-                    val record = dayRecords[i]
+                item(key = "h_$day") {
+                    DayHeader(day, dayRecords)
+                }
+                items(dayRecords, key = { it.id }) { record ->
                     GlassCard(
+                        backdrop = backdrop,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                            .padding(horizontal = 14.dp, vertical = 4.dp)
                             .clickable { pendingDelete = record },
                     ) {
                         Row(
@@ -79,19 +80,26 @@ fun RecordsPage(records: List<ExpenseRecord>, onDelete: (ExpenseRecord) -> Unit)
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text(record.category, style = TextStyle(fontSize = 17.sp, fontWeight = FontWeight.Medium, color = ContentDark))
+                                BasicText(record.category, style = textStyle(17f, FontWeight.Medium))
                                 if (record.note.isNotBlank()) {
-                                    Text(record.note, style = TextStyle(fontSize = 13.sp, color = SubText))
+                                    BasicText(record.note, style = textStyle(13f, color = AppColors.Sub))
                                 }
-                                Text(
-                                    timeFmt.format(Instant.ofEpochMilli(record.time).atZone(ZoneId.systemDefault())),
-                                    style = TextStyle(fontSize = 11.sp, color = SubText),
+                                BasicText(
+                                    timeFmt.format(
+                                        Instant.ofEpochMilli(record.time).atZone(ZoneId.systemDefault())
+                                    ),
+                                    style = textStyle(11f, color = AppColors.Sub),
                                 )
                             }
-                            Text(
-                                (if (record.type == RecordType.INCOME) "+" else "-") + formatMoney(record.amount),
-                                style = TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
-                                color = if (record.type == RecordType.INCOME) IncomeBlue else ExpenseRed,
+                            BasicText(
+                                text = (if (record.type == RecordType.INCOME) "+" else "-") +
+                                    formatMoney(record.amount),
+                                style = textStyle(
+                                    18f,
+                                    FontWeight.SemiBold,
+                                    if (record.type == RecordType.INCOME) AppColors.Income
+                                    else AppColors.Expense,
+                                ),
                             )
                         }
                     }
@@ -121,21 +129,25 @@ private fun DayHeader(day: LocalDate, records: List<ExpenseRecord>) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 6.dp),
+            .padding(horizontal = 20.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(day.format(dayFmt), style = TextStyle(fontSize = 13.sp, color = SubText))
-        Text(
-            buildString {
+        BasicText(day.format(dayFmt), style = textStyle(13f, color = AppColors.Sub))
+        BasicText(
+            text = buildString {
                 if (exp > 0) append("支出 ${formatMoney(exp)}")
-                if (inc > 0) { if (isNotEmpty()) append("  "); append("收入 ${formatMoney(inc)}") }
+                if (inc > 0) {
+                    if (isNotEmpty()) append("  ")
+                    append("收入 ${formatMoney(inc)}")
+                }
             },
-            style = TextStyle(fontSize = 12.sp, color = SubText),
+            style = textStyle(12f, color = AppColors.Sub),
         )
     }
 }
 
-internal fun groupByDay(records: List<ExpenseRecord>): List<Pair<LocalDate, List<ExpenseRecord>>> {
+/** 按自然日分组（记录已按时间倒序） */
+fun groupByDay(records: List<ExpenseRecord>): List<Pair<LocalDate, List<ExpenseRecord>>> {
     val zone = ZoneId.systemDefault()
     return records
         .groupBy { Instant.ofEpochMilli(it.time).atZone(zone).toLocalDate() }
@@ -143,7 +155,7 @@ internal fun groupByDay(records: List<ExpenseRecord>): List<Pair<LocalDate, List
         .map { it.key to it.value }
 }
 
-/** 简单确认弹窗（系统 Dialog + 玻璃卡片风格） */
+/** 确认弹窗（自绘遮罩 + 玻璃卡片） */
 @Composable
 fun ConfirmDialog(
     title: String,
@@ -152,38 +164,36 @@ fun ConfirmDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
-        GlassCard(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-            insidePadding = 22.dp,
-        ) {
-            Text(title, style = TextStyle(fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = ContentDark))
-            Spacer(Modifier.height(8.dp))
-            Text(summary, style = TextStyle(fontSize = 14.sp, color = SubText, lineHeight = 20.sp))
-            Spacer(Modifier.height(18.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                DialogButton("取消", Modifier.weight(1f), onDismiss)
-                DialogButton(confirmText, Modifier.weight(1f), onConfirm, primary = true)
-            }
-        }
-    }
-}
-
-@Composable
-internal fun DialogButton(
-    text: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-    primary: Boolean = false,
-) {
     Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (primary) IncomeBlue else Color(0x338C93B0))
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(AppColors.Scrim)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { onDismiss() },
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = TextStyle(fontSize = 16.sp, color = if (primary) Color.White else ContentDark))
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 28.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(Color.White.copy(alpha = 0.97f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { /* 拦截点击，避免穿透到遮罩 */ }
+                .padding(22.dp),
+        ) {
+            BasicText(title, style = textStyle(19f, FontWeight.SemiBold))
+            Spacer(Modifier.height(8.dp))
+            BasicText(summary, style = textStyle(14f, color = AppColors.Sub))
+            Spacer(Modifier.height(18.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                AppButton("取消", Modifier.weight(1f)) { onDismiss() }
+                AppButton(confirmText, Modifier.weight(1f), primary = true) { onConfirm() }
+            }
+        }
     }
 }

@@ -36,7 +36,7 @@ object Categories {
     }
 }
 
-/** JSON 文件持久化（app 私有目录，卸载即清除） */
+/** JSON 文件持久化（app 私有目录） */
 class LedgerStore(context: Context) {
 
     private val json = Json { ignoreUnknownKeys = true }

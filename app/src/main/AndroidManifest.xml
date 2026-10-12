@@ -4,6 +4,7 @@
     <application
         android:label="Miuix 记账"
         android:supportsRtl="true"
+        android:hardwareAccelerated="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
         <activity

@@ -1,11 +1,10 @@
 package com.example.miuixledger.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,7 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,25 +23,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.example.miuixledger.data.ExpenseRecord
 import com.example.miuixledger.data.RecordType
+import com.kyant.backdrop.Backdrop
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 
-private val SubText = Color(0xFF8C93B0)
-private val ContentDark = Color(0xFF2A3142)
-private val ExpenseRed = Color(0xFFE94634)
-private val IncomeBlue = Color(0xFF3482FF)
-
-/** 统计页：本月收支 + 分类占比（玻璃卡片） */
+/** 统计页：本月收支 + 分类占比 */
 @Composable
-fun StatsPage(records: List<ExpenseRecord>) {
+fun StatsPage(backdrop: Backdrop, records: List<ExpenseRecord>) {
     val zone = ZoneId.systemDefault()
-    val now = java.time.LocalDate.now(zone)
+    val now = LocalDate.now(zone)
     val month = records.filter {
         Instant.ofEpochMilli(it.time).atZone(zone).toLocalDate().let { d ->
             d.year == now.year && d.month == now.month
@@ -57,32 +51,36 @@ fun StatsPage(records: List<ExpenseRecord>) {
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 12.dp, bottom = 130.dp),
+        contentPadding = PaddingValues(top = 8.dp, bottom = 140.dp),
     ) {
         item {
-            GlassCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), insidePadding = 18.dp) {
-                Text("${now.year}年${now.monthValue}月", style = TextStyle(fontSize = 13.sp, color = SubText))
-                Spacer(Modifier.height(8.dp))
-                Text(
+            GlassCard(
+                backdrop = backdrop,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                insidePadding = 20.dp,
+            ) {
+                BasicText("${now.year}年${now.monthValue}月", style = textStyle(13f, color = AppColors.Sub))
+                Spacer(Modifier.height(10.dp))
+                BasicText(
                     "支出 ¥" + formatMoney(exp),
-                    style = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold, color = ExpenseRed),
+                    style = textStyle(34f, FontWeight.Bold, AppColors.Expense),
                 )
-                Spacer(Modifier.height(4.dp))
-                Text("收入 ¥" + formatMoney(inc), style = TextStyle(fontSize = 15.sp, color = IncomeBlue))
+                Spacer(Modifier.height(6.dp))
+                BasicText("收入 ¥" + formatMoney(inc), style = textStyle(15f, color = AppColors.Income))
             }
         }
         item {
-            Text(
+            BasicText(
                 "分类支出占比",
-                style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = SubText),
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+                style = textStyle(14f, FontWeight.SemiBold, AppColors.Sub),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
             )
         }
         if (byCat.isEmpty()) {
             item {
-                Text(
+                BasicText(
                     "本月暂无支出记录",
-                    style = TextStyle(fontSize = 14.sp, color = SubText),
+                    style = textStyle(14f, color = AppColors.Sub),
                     modifier = Modifier.padding(horizontal = 20.dp),
                 )
             }
@@ -90,12 +88,15 @@ fun StatsPage(records: List<ExpenseRecord>) {
             items(byCat.size) { i ->
                 val (cat, amount) = byCat[i]
                 val ratio = if (exp > 0) (amount / exp).toFloat() else 0f
-                GlassCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                GlassCard(
+                    backdrop = backdrop,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+                ) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(cat, style = TextStyle(fontSize = 16.sp, color = ContentDark))
-                        Text(
+                        BasicText(cat, style = textStyle(16f))
+                        BasicText(
                             "¥${formatMoney(amount)} · ${(ratio * 100).toInt()}%",
-                            style = TextStyle(fontSize = 13.sp, color = SubText),
+                            style = textStyle(13f, color = AppColors.Sub),
                         )
                     }
                     Spacer(Modifier.height(10.dp))
@@ -111,7 +112,7 @@ fun StatsPage(records: List<ExpenseRecord>) {
                                 .fillMaxWidth(ratio.coerceIn(0.02f, 1f))
                                 .height(6.dp)
                                 .clip(RoundedCornerShape(3.dp))
-                                .background(ExpenseRed)
+                                .background(AppColors.Expense)
                         )
                     }
                 }
@@ -120,36 +121,51 @@ fun StatsPage(records: List<ExpenseRecord>) {
     }
 }
 
-/** 设置页：清空数据 */
+/** 设置页：数据管理 + 玻璃说明 */
 @Composable
-fun SettingsPage(recordCount: Int, onClearAll: () -> Unit) {
+fun SettingsPage(
+    backdrop: Backdrop,
+    recordCount: Int,
+    onClearAll: () -> Unit,
+) {
     var showClear by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
-        Text(
+        BasicText(
             "数据",
-            style = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = SubText),
-            modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
+            style = textStyle(14f, FontWeight.SemiBold, AppColors.Sub),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
         )
-        GlassCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), insidePadding = 18.dp) {
-            Text(
-                "当前共 $recordCount 条记录，保存在应用私有目录。",
-                style = TextStyle(fontSize = 13.sp, color = SubText),
+        GlassCard(
+            backdrop = backdrop,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+            insidePadding = 20.dp,
+        ) {
+            BasicText(
+                "当前共 $recordCount 条记录，保存在应用私有目录，卸载后清除。",
+                style = textStyle(13f, color = AppColors.Sub),
             )
-            Spacer(Modifier.height(14.dp))
-            DialogButton("清空全部记录", Modifier.fillMaxWidth(), { showClear = true })
+            Spacer(Modifier.height(16.dp))
+            AppButton("清空全部记录", Modifier.fillMaxWidth()) { showClear = true }
         }
-        Spacer(Modifier.height(16.dp))
-        GlassCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), insidePadding = 18.dp) {
-            Text(
-                "🔮 液态玻璃说明",
-                style = TextStyle(fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = ContentDark),
-            )
-            Spacer(Modifier.height(6.dp))
-            Text(
-                "底栏与记一笔按钮使用 Kyant0/AndroidLiquidGlass（Backdrop）管线：" +
-                    "vibrancy 提饱和、blur 磨砂、lens 边缘折射（Android 13+ AGSL 着色器）。",
-                style = TextStyle(fontSize = 13.sp, color = SubText, lineHeight = 19.sp),
+
+        Spacer(Modifier.height(20.dp))
+        BasicText(
+            "关于液态玻璃",
+            style = textStyle(14f, FontWeight.SemiBold, AppColors.Sub),
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+        )
+        GlassCard(
+            backdrop = backdrop,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+            insidePadding = 20.dp,
+        ) {
+            BasicText(
+                "底栏与记一笔按钮使用 Kyant0/AndroidLiquidGlass（Backdrop）管线：\n" +
+                    "vibrancy() 提饱和 → blur() 磨砂 → lens() 边缘折射。\n\n" +
+                    "完整折射效果需要 Android 13+（AGSL RuntimeShader），" +
+                    "低版本会自动降级为普通模糊。",
+                style = textStyle(13f, color = AppColors.Sub),
             )
         }
     }
@@ -160,7 +176,10 @@ fun SettingsPage(recordCount: Int, onClearAll: () -> Unit) {
             summary = "将删除全部 $recordCount 条记录，且无法恢复。确定继续吗？",
             confirmText = "清空",
             onDismiss = { showClear = false },
-            onConfirm = { showClear = false; onClearAll() },
+            onConfirm = {
+                showClear = false
+                onClearAll()
+            },
         )
     }
 }
