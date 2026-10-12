@@ -18,13 +18,34 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      # 说明：GitHub 的 ubuntu-latest 运行器已预装 Android SDK，
+      # 不要再执行 android-actions/setup-android —— 它内部调用的 "sdkmanager tools"
+      # 包已被 Google 移除，会直接报 Failed to find package 'tools'。
+
+      - name: Ensure Android SDK platform 36 + build-tools
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "SDK=$SDK"
+          SDKMGR="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMGR" ] || SDKMGR=$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
+          echo "SDKMGR=$SDKMGR"
+          if [ -x "$SDKMGR" ]; then
+            yes | "$SDKMGR" --sdk_root="$SDK" --install "platforms;android-36" "build-tools;36.0.0" > /dev/null 2>&1 || true
+          fi
+          echo "--- installed platforms ---"
+          ls "$SDK/platforms" || true
+          echo "--- installed build-tools ---"
+          ls "$SDK/build-tools" || true
 
       - name: Setup Gradle 8.13
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.13"
+
+      - name: Show toolchain info
+        run: |
+          java -version
+          gradle --version
 
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
